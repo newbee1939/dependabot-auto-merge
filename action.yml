@@ -1,0 +1,55 @@
+name: 'Dependabot Auto-Merge'
+description: 'Automatically merge Dependabot pull requests based on update type'
+branding:
+  icon: 'git-merge'
+  color: 'blue'
+inputs:
+  update-type:
+    description: 'Maximum update type to auto-merge (major, minor, or patch)'
+    required: false
+    default: 'patch'
+runs:
+  using: 'composite'
+  steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@08eff52bf64351f401fb50d4972fa95b9f2c2d1b
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Check update type
+      id: check
+      shell: bash
+      run: |
+        UPDATE_TYPE="${{ steps.metadata.outputs.update-type }}"
+        ALLOWED_TYPE="${{ inputs.update-type }}"
+
+        case "$ALLOWED_TYPE" in
+          major)
+            ALLOWED_TYPES="version-update:semver-major version-update:semver-minor version-update:semver-patch"
+            ;;
+          minor)
+            ALLOWED_TYPES="version-update:semver-minor version-update:semver-patch"
+            ;;
+          patch)
+            ALLOWED_TYPES="version-update:semver-patch"
+            ;;
+          *)
+            echo "Invalid update-type: $ALLOWED_TYPE. Must be one of: major, minor, patch"
+            exit 1
+            ;;
+        esac
+
+        if echo "$ALLOWED_TYPES" | grep -q "$UPDATE_TYPE"; then
+          echo "should_merge=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_merge=false" >> $GITHUB_OUTPUT
+        fi
+
+      - name: Auto-merge Dependabot PR
+        if: steps.check.outputs.should_merge == 'true'
+        shell: bash
+        run: |
+          gh pr merge "${{ github.event.pull_request.html_url }}" --merge --auto
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
